@@ -1146,6 +1146,71 @@ void cserver::command_handler(void *cmd_item, void *data)
 	
 }
 
+/* Oduino specific functions */
+int cserver::isCreated()
+{
+	if(fd_oduino<=0)
+	    return 0;
+	else
+	    return 1;
+}
+
+int cserver::listen()
+{
+	if(isCreated() == 0)
+	    return 0;
+	return parse()==1;
+}
+
+int cserver::parse()
+{
+	tcflush(fd_oduino, TCIFLUSH);
+	tcsetattr(fd_oduino, TCSANOW, &newtio);
+	
+	while((res_oduino = read(fd_oduino, buf, BUF_SIZE)) <= 0)
+
+	if(res_oduino <= 0)
+	    return 0;
+
+	buf[res_oduino] = 0;
+
+	char tmp_str[BUF_SIZE];
+	char *tmp_position = strstr(buf, "TEM:");
+
+	if(tmp_position == 0)
+	    return 0;
+
+	// Temperature
+
+	tmp_position += 4;
+	strcpy(tmp_str, tmp_position);
+	tmp_position = strstr(tmp_str, "C");
+	*tmp_position = 0;
+	temperature = atoi(tmp_str);
+
+	tmp_position = strstr(buf, "HUMI:");
+	if(tmp_position == 0)
+	    return 0;
+
+	// Humidity
+	tmp_position += 5;
+	strcpy(tmp_str, tmp_position);
+	tmp_position = strstr(tmp_str, "%");
+	*tmp_position = 0;
+	humidity = atoi(tmp_str);
+
+	return 1;
+}
+
+int cserver::get_Temperature()
+{
+	return temperature;
+}
+
+int cserver::get_Humidity()
+{
+    	return humidity;
+}
 
 void cserver::sf_main_loop_stop(void)
 {
@@ -1153,6 +1218,10 @@ void cserver::sf_main_loop_stop(void)
 	{
 		g_main_loop_quit(g_mainloop);
 	}
+
+	/* Tizen */
+	tcsetattr(fd_oduino, TCSANOW, &oldtio);
+	close(fd_oduino);
 }
 
 void cserver::sf_main_loop(void)
@@ -1195,6 +1264,51 @@ void cserver::sf_main_loop(void)
 		fd = -1;
 	}
 
+	/* Tizen */
+	fd_oduino = open(DEVICE_NAME1, O_RDWR | O_NOCTTY | O_NONBLOCK);
+
+	if(fd_oduino <= 0){
+	    fd_oduino = open(DEVICE_NAME2, O_RDWR | O_NOCTTY | O_NONBLOCK);
+	    if(fd_oduino <= 0){
+		fd_oduino = open(DEVICE_NAME3, O_RDWR | O_NOCTTY | O_NONBLOCK);
+		if(fd_oduino <= 0){
+		    fd_oduino = -1;
+		    ERR("There is no oduino device!\n");
+		    goto finish;
+		}
+	    }
+	}
+	dlog("sensor-framework-ESLAB");
+
+	/* Initialize */
+	tcgetattr(fd_oduino, &oldtio);
+	bzero(&newtio, sizeof(newtio));
+
+	newtio.c_cflag = BAUD_RATE | CRTSCTS | CS8 | CLOCAL | CREAD;
+	newtio.c_iflag = IGNPAR | ICRNL;
+	newtio.c_oflag = 0;
+	newtio.c_lflag = ICANON;
+
+	newtio.c_cc[VINTR]    = 0;     /* Ctrl-c */
+	newtio.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
+	newtio.c_cc[VERASE]   = 0;     /* del */
+	newtio.c_cc[VKILL]    = 0;     /* @ */
+	newtio.c_cc[VEOF]     = 4;     /* Ctrl-d */
+	newtio.c_cc[VTIME]    = 0;     /* inter-character timer unused */
+	newtio.c_cc[VMIN]     = 1;     /* blocking read until 1 character arrives */
+	newtio.c_cc[VSWTC]    = 0;     /* '\0' */
+	newtio.c_cc[VSTART]   = 0;     /* Ctrl-q */
+	newtio.c_cc[VSTOP]    = 0;     /* Ctrl-s */
+	newtio.c_cc[VSUSP]    = 0;     /* Ctrl-z */
+	newtio.c_cc[VEOL]     = 0;     /* '\0' */
+	newtio.c_cc[VREPRINT] = 0;     /* Ctrl-r */
+	newtio.c_cc[VDISCARD] = 0;     /* Ctrl-u */
+	newtio.c_cc[VWERASE]  = 0;     /* Ctrl-w */
+	newtio.c_cc[VLNEXT]   = 0;     /* Ctrl-v */
+	newtio.c_cc[VEOL2]    = 0;     /* '\0' */
+
+
+finish:
 	g_main_loop_run(g_mainloop);
     g_main_loop_unref(g_mainloop);	
 	
